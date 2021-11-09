@@ -3,6 +3,7 @@ package com.sequenceiq.cloudbreak.service.customconfigs;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -10,6 +11,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
+import javax.ws.rs.InternalServerErrorException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,9 +32,11 @@ import com.sequenceiq.cloudbreak.domain.CustomConfigurationProperty;
 import com.sequenceiq.cloudbreak.domain.CustomConfigurations;
 import com.sequenceiq.cloudbreak.domain.stack.cluster.Cluster;
 import com.sequenceiq.cloudbreak.exception.CustomConfigurationsCreationException;
+import com.sequenceiq.cloudbreak.repository.CustomConfigurationPropertyRepository;
 import com.sequenceiq.cloudbreak.logger.MDCUtils;
 import com.sequenceiq.cloudbreak.repository.CustomConfigurationsRepository;
 import com.sequenceiq.cloudbreak.service.cluster.ClusterService;
+import com.sequenceiq.cloudbreak.service.secret.service.SecretService;
 import com.sequenceiq.cloudbreak.validation.CustomConfigurationsValidator;
 
 @Service
@@ -44,7 +48,13 @@ public class CustomConfigurationsService implements ResourcePropertyProvider {
     private CustomConfigurationsRepository customConfigurationsRepository;
 
     @Inject
+    private CustomConfigurationPropertyRepository customConfigurationPropertyRepository;
+
+    @Inject
     private ClusterService clusterService;
+
+    @Inject
+    private SecretService secretService;
 
     @Inject
     private OwnerAssignmentService ownerAssignmentService;
@@ -66,8 +76,28 @@ public class CustomConfigurationsService implements ResourcePropertyProvider {
         return customConfigurationsRepository.findCustomConfigsByAccountId(accountId);
     }
 
+    private CustomConfigurationProperty storePropertyAsSecret(CustomConfigurationProperty property) {
+        if (!secretService.isSecret(property.getSecret())) {
+            property.setSecretValue(property.getValue());
+            property.setValue(null);
+        }
+        return property;
+    }
+
+    public void migrateToSecretStore(CustomConfigurations customConfigurations) {
+        Set<CustomConfigurationProperty> properties = customConfigurations.getConfigurations()
+                .stream()
+                .map(this::storePropertyAsSecret)
+                .collect(Collectors.toSet());
+        customConfigurationPropertyRepository.saveAll(properties);
+    }
+
     public CustomConfigurations getByNameOrCrn(NameOrCrn nameOrCrn) {
-        return nameOrCrn.hasName() ? getByName(nameOrCrn.getName(), ThreadBasedUserCrnProvider.getAccountId()) : getByCrn(nameOrCrn.getCrn());
+        CustomConfigurations customConfigurations = nameOrCrn.hasName()
+                ? getByName(nameOrCrn.getName(), ThreadBasedUserCrnProvider.getAccountId())
+                : getByCrn(nameOrCrn.getCrn());
+        migrateToSecretStore(customConfigurations);
+        return customConfigurations;
     }
 
     private CustomConfigurations getByCrn(String crn) {
@@ -93,16 +123,17 @@ public class CustomConfigurationsService implements ResourcePropertyProvider {
                         + " exists. Provide a different name"); });
         initializeCrnForCustomConfigs(customConfigurations, accountId);
         customConfigurations.setAccount(accountId);
-        customConfigurations.getConfigurations().forEach(config -> config.setCustomConfigs(customConfigurations));
+        Set<CustomConfigurationProperty> configurationProperties = new HashSet<>(customConfigurations.getConfigurations());
+        configurationProperties.forEach(config -> config.setCustomConfigs(customConfigurations));
         try {
             transactionService.required(() -> {
-                CustomConfigurations created = customConfigurationsRepository.save(customConfigurations);
-                ownerAssignmentService.assignResourceOwnerRoleIfEntitled(ThreadBasedUserCrnProvider.getUserCrn(), created.getCrn(),
+                customConfigurationPropertyRepository.saveAll(configurationProperties);
+                ownerAssignmentService.assignResourceOwnerRoleIfEntitled(ThreadBasedUserCrnProvider.getUserCrn(), customConfigurations.getCrn(),
                         ThreadBasedUserCrnProvider.getAccountId());
-                return created;
+                return customConfigurations;
             });
         } catch (TransactionService.TransactionExecutionException e) {
-            throw new TransactionService.TransactionRuntimeExecutionException(e);
+            throw new InternalServerErrorException(e);
         }
         return customConfigurations;
     }
@@ -163,7 +194,7 @@ public class CustomConfigurationsService implements ResourcePropertyProvider {
     public CustomConfigurations deleteByCrn(String crn) {
         CustomConfigurations customConfigurationsByCrn = getByCrn(crn);
         prepareDeletion(customConfigurationsByCrn);
-        customConfigurationsRepository.deleteById(customConfigurationsByCrn.getId());
+        customConfigurationPropertyRepository.deleteAll(customConfigurationsByCrn.getConfigurations());
         ownerAssignmentService.notifyResourceDeleted(crn, MDCUtils.getRequestId());
         return customConfigurationsByCrn;
     }
@@ -171,7 +202,7 @@ public class CustomConfigurationsService implements ResourcePropertyProvider {
     public CustomConfigurations deleteByName(String name, String accountId) {
         CustomConfigurations customConfigurationsByName = getByName(name, accountId);
         prepareDeletion(customConfigurationsByName);
-        customConfigurationsRepository.deleteById(customConfigurationsByName.getId());
+        customConfigurationPropertyRepository.deleteAll(customConfigurationsByName.getConfigurations());
         ownerAssignmentService.notifyResourceDeleted(customConfigurationsByName.getCrn(), MDCUtils.getRequestId());
         return customConfigurationsByName;
     }
