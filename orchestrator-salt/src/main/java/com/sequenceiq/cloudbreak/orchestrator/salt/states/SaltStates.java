@@ -18,6 +18,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import org.apache.commons.collections4.MapUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.util.CollectionUtils;
@@ -406,5 +407,12 @@ public class SaltStates {
             }
         }
         return versionCommandOutput;
+    }
+
+    public static boolean unboundClusterConfigPresentOnAnyNodes(SaltConnector sc, Target<String> target) {
+        return measure(() -> sc.run(target, "file.file_exists", LOCAL, PingResponse.class, "/etc/unbound/conf.d/00-cluster.conf"), LOGGER,
+                "Getting information about existence of unbound config took {}ms").getResult().stream()
+                .filter(map -> MapUtils.isEmpty(map) || map.values().stream().anyMatch(Boolean::booleanValue))
+                .count() > 0;
     }
 }
