@@ -123,4 +123,9 @@ public interface HostOrchestrator extends HostRecipeExecutor {
     Map<String, String> getFreeDiskSpaceByNodes(Set<Node> nodes, List<GatewayConfig> gatewayConfigs);
 
     void removeDeadSaltMinions(GatewayConfig gatewayConfig) throws CloudbreakOrchestratorFailedException;
+
+    boolean unboundRunningOnCluster(GatewayConfig primaryGateway, Set<Node> nodes);
+
+    void uploadSaltConfig(GatewayConfig gatewayConfig, Set<String> targets, byte[] stateConfigZip, ExitCriteriaModel exitCriteriaModel)
+            throws CloudbreakOrchestratorFailedException, IOException;
 }

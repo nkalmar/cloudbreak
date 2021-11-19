@@ -27,6 +27,7 @@ import java.util.stream.Collectors;
 import javax.annotation.Nonnull;
 import javax.inject.Inject;
 
+import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -59,6 +60,7 @@ import com.sequenceiq.cloudbreak.cmtemplate.CMRepositoryVersionUtil;
 import com.sequenceiq.cloudbreak.common.exception.CloudbreakServiceException;
 import com.sequenceiq.cloudbreak.common.exception.NotFoundException;
 import com.sequenceiq.cloudbreak.common.json.Json;
+import com.sequenceiq.cloudbreak.common.type.ComponentType;
 import com.sequenceiq.cloudbreak.common.type.TemporaryStorage;
 import com.sequenceiq.cloudbreak.core.bootstrap.service.ClusterDeletionBasedExitCriteriaModel;
 import com.sequenceiq.cloudbreak.core.bootstrap.service.container.postgres.PostgresConfigService;
@@ -68,6 +70,7 @@ import com.sequenceiq.cloudbreak.core.bootstrap.service.host.decorator.Telemetry
 import com.sequenceiq.cloudbreak.domain.RDSConfig;
 import com.sequenceiq.cloudbreak.domain.stack.Stack;
 import com.sequenceiq.cloudbreak.domain.stack.cluster.Cluster;
+import com.sequenceiq.cloudbreak.domain.stack.cluster.ClusterComponent;
 import com.sequenceiq.cloudbreak.domain.stack.cluster.IdBroker;
 import com.sequenceiq.cloudbreak.domain.stack.cluster.gateway.ExposedServices;
 import com.sequenceiq.cloudbreak.domain.stack.cluster.gateway.Gateway;
@@ -242,6 +245,9 @@ public class ClusterHostServiceRunner {
     @Inject
     private FreeIpaConfigProvider freeIpaConfigProvider;
 
+    @Inject
+    private ClusterComponentConfigProvider clusterComponentProvider;
+
     public void runClusterServices(@Nonnull Stack stack, @Nonnull Cluster cluster, Map<String, String> candidateAddresses) {
         try {
             Set<Node> allNodes = stackUtil.collectNodes(stack);
@@ -250,6 +256,21 @@ public class ClusterHostServiceRunner {
             List<GatewayConfig> gatewayConfigs = gatewayConfigService.getAllGatewayConfigs(stack);
             SaltConfig saltConfig = createSaltConfig(stack, cluster, primaryGatewayConfig, gatewayConfigs, allNodes, reachableNodes);
             ExitCriteriaModel exitCriteriaModel = clusterDeletionBasedModel(stack.getId(), cluster.getId());
+
+            if (hostOrchestrator.unboundRunningOnCluster(primaryGatewayConfig, reachableNodes) && !candidateAddresses.isEmpty()) {
+                byte[] stateZip = null;
+                ClusterComponent stateComponent = clusterComponentProvider.getComponent(cluster.getId(), ComponentType.SALT_STATE);
+                if (stateComponent != null) {
+                    String content = (String) stateComponent.getAttributes().getMap().getOrDefault(ComponentType.SALT_STATE.name(), "");
+                    if (!content.isEmpty()) {
+                        stateZip = Base64.decodeBase64(content);
+                    }
+                }
+                hostOrchestrator.uploadSaltConfig(primaryGatewayConfig,
+                        gatewayConfigs.stream().map(gwConfig -> gwConfig.getHostname()).collect(Collectors.toSet()),
+                        stateZip, exitCriteriaModel);
+            }
+
             modifyStartupMountRole(stack, reachableNodes, GrainOperation.ADD);
             hostOrchestrator.initServiceRun(gatewayConfigs, allNodes, reachableNodes, saltConfig, exitCriteriaModel, stack.getCloudPlatform());
             if (CollectionUtils.isEmpty(candidateAddresses)) {
