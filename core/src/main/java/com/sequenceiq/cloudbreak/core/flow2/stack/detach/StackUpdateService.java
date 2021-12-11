@@ -47,7 +47,6 @@ public class StackUpdateService {
                 stack.setResourceCrn(newCrn);
                 Stack savedStack = measure(() -> stackService.save(stack),
                         LOGGER, "Stack save took {} ms for stack {}", stack.getName());
-                // While detaching the stack, name of the cluster is renamed to avoid conflicts.
                 Optional<Cluster> cluster = clusterService.findOneByStackId(savedStack.getId());
                 cluster.map(c -> {
                     c.setName(newName);
