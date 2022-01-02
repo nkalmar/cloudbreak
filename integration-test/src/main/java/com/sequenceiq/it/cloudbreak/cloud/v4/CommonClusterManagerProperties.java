@@ -48,8 +48,7 @@ public class CommonClusterManagerProperties {
     }
 
     public String getInternalSdxBlueprintName() {
-        return String.format(internalSdxBlueprintName, runtimeVersion);
-    }
+        return String.format(internalSdxBlueprintName, runtimeVersion); }
 
     public void setInternalSdxBlueprintName(String internalSdxBlueprintName) {
         this.internalSdxBlueprintName = internalSdxBlueprintName;
@@ -119,6 +118,8 @@ public class CommonClusterManagerProperties {
 
         private String distroXUpgradeTargetVersion;
 
+        private String imageCatalogUrl3rdParty;
+
         public String getCurrentHARuntimeVersion() {
             return currentHARuntimeVersion;
         }
@@ -157,6 +158,14 @@ public class CommonClusterManagerProperties {
 
         public void setDistroXUpgradeTargetVersion(String distroXUpgradeTargetVersion) {
             this.distroXUpgradeTargetVersion = distroXUpgradeTargetVersion;
+        }
+
+        public String getImageCatalogUrl3rdParty() {
+            return imageCatalogUrl3rdParty;
+        }
+
+        public void setImageCatalogUrl3rdParty(String imageCatalogUrl3rdParty) {
+            this.imageCatalogUrl3rdParty = imageCatalogUrl3rdParty;
         }
 
     }

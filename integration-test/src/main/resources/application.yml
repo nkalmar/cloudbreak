@@ -88,6 +88,7 @@ integrationtest:
     targetRuntimeVersion: 7.2.13
     distroXUpgradeCurrentVersion: 7.2.7
     distroXUpgradeTargetVersion: 7.2.13
+    imageCatalogUrl3rdParty: https://cloudbreak-imagecatalog.s3.amazonaws.com/v3-prod-cb-image-catalog.json
   privateEndpointEnabled: false
 
   spot:
