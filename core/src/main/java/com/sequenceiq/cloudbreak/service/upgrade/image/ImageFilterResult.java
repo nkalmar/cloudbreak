@@ -1,20 +1,22 @@
 package com.sequenceiq.cloudbreak.service.upgrade.image;
 
-import com.sequenceiq.cloudbreak.cloud.model.catalog.Images;
+import java.util.List;
+
+import com.sequenceiq.cloudbreak.cloud.model.catalog.Image;
 
 public class ImageFilterResult {
 
-    private final Images availableImages;
+    private final List<Image> images;
 
     private final String reason;
 
-    public ImageFilterResult(Images availableImages, String reason) {
-        this.availableImages = availableImages;
+    public ImageFilterResult(List<Image> images, String reason) {
+        this.images = images;
         this.reason = reason;
     }
 
-    public Images getAvailableImages() {
-        return availableImages;
+    public List<Image> getImages() {
+        return images;
     }
 
     public String getReason() {
