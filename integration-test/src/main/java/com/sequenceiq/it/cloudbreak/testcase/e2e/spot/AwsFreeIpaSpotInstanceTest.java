@@ -33,7 +33,7 @@ public class AwsFreeIpaSpotInstanceTest extends AbstractE2ETest {
 
     @Override
     protected void setupTest(TestContext testContext) {
-        checkCloudPlatform(CloudPlatform.AWS);
+        determineCloudPlatformForTest(CloudPlatform.AWS);
         super.setupTest(testContext);
     }
 
