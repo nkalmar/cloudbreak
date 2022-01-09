@@ -1,4 +1,4 @@
-package com.sequenceiq.datalake.service.sdx.cert;
+package com.sequenceiq.datalake.service.sdx;
 
 import static com.sequenceiq.datalake.service.sdx.flowcheck.FlowState.FAILED;
 import static com.sequenceiq.datalake.service.sdx.flowcheck.FlowState.FINISHED;
@@ -24,7 +24,6 @@ import com.sequenceiq.cloudbreak.auth.ThreadBasedUserCrnProvider;
 import com.sequenceiq.cloudbreak.cloud.scheduler.PollGroup;
 import com.sequenceiq.datalake.entity.SdxCluster;
 import com.sequenceiq.datalake.flow.statestore.DatalakeInMemoryStateStore;
-import com.sequenceiq.datalake.service.sdx.PollingConfig;
 import com.sequenceiq.datalake.service.sdx.flowcheck.CloudbreakFlowService;
 import com.sequenceiq.datalake.service.sdx.flowcheck.FlowState;
 import com.sequenceiq.datalake.service.sdx.status.SdxStatusService;
@@ -61,6 +60,11 @@ public class CloudbreakPoller {
     public void pollStopUntilStopped(SdxCluster sdxCluster, PollingConfig pollingConfig) {
         waitForState("Stop", sdxCluster, pollingConfig,
                 Sets.immutableEnumSet(Status.STOPPED), Sets.immutableEnumSet(Status.STOP_FAILED));
+    }
+
+    public void pollCcmUpgradeUntilAvailable(SdxCluster sdxCluster, PollingConfig pollingConfig) {
+        waitForState("CCM upgrade", sdxCluster, pollingConfig,
+                Status.getAvailableStatuses(), Sets.immutableEnumSet(Status.UPGRADE_CCM_FAILED));
     }
 
     public void waitForState(

@@ -6,14 +6,17 @@ public class SdxCcmUpgradeResponse {
 
     private FlowIdentifier flowIdentifier;
 
+    private CcmUpgradeResponseType responseType;
+
     private String reason;
 
     public SdxCcmUpgradeResponse() {
     }
 
-    public SdxCcmUpgradeResponse(String reason, FlowIdentifier flowIdentifier) {
-        this.reason = reason;
+    public SdxCcmUpgradeResponse(CcmUpgradeResponseType responseType, FlowIdentifier flowIdentifier, String reason) {
+        this.responseType = responseType;
         this.flowIdentifier = flowIdentifier;
+        this.reason = reason;
     }
 
     public String getReason() {
@@ -32,10 +35,20 @@ public class SdxCcmUpgradeResponse {
         this.flowIdentifier = flowIdentifier;
     }
 
+    public CcmUpgradeResponseType getResponseType() {
+        return responseType;
+    }
+
+    public void setResponseType(CcmUpgradeResponseType responseType) {
+        this.responseType = responseType;
+    }
+
     @Override
     public String toString() {
         return "SdxCcmUpgradeResponse{" +
                 "flowIdentifier=" + flowIdentifier +
+                ", responseType=" + responseType +
+                ", reason='" + reason + '\'' +
                 '}';
     }
 }
