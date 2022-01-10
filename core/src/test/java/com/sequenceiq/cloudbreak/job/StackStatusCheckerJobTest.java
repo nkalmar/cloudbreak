@@ -34,6 +34,7 @@ import com.google.common.collect.Sets;
 import com.sequenceiq.cloudbreak.api.endpoint.v4.common.DetailedStackStatus;
 import com.sequenceiq.cloudbreak.api.endpoint.v4.common.Status;
 import com.sequenceiq.cloudbreak.api.endpoint.v4.stacks.base.InstanceStatus;
+import com.sequenceiq.cloudbreak.auth.altus.EntitlementService;
 import com.sequenceiq.cloudbreak.cloud.model.HostName;
 import com.sequenceiq.cloudbreak.cluster.api.ClusterApi;
 import com.sequenceiq.cloudbreak.cluster.api.ClusterStatusService;
@@ -122,6 +123,9 @@ public class StackStatusCheckerJobTest {
     @Mock
     private RuntimeVersionService runtimeVersionService;
 
+    @Mock
+    private EntitlementService entitlementService;
+
     @Before
     public void init() {
         Tracer tracer = Mockito.mock(Tracer.class);
@@ -133,6 +137,7 @@ public class StackStatusCheckerJobTest {
 
         stack = new Stack();
         stack.setId(1L);
+        stack.setResourceCrn("crn:cdp:datahub:us-west-1:acc1:stack:cluster1");
         workspace = new Workspace();
         workspace.setId(1L);
         stack.setWorkspace(workspace);
@@ -140,6 +145,7 @@ public class StackStatusCheckerJobTest {
         user = new User();
         user.setUserId("1");
         stack.setCreator(user);
+        stack.setCloudPlatform("AWS");
 
         when(stackService.get(anyLong())).thenReturn(stack);
         when(jobExecutionContext.getMergedJobDataMap()).thenReturn(new JobDataMap());
@@ -193,6 +199,45 @@ public class StackStatusCheckerJobTest {
         verify(clusterOperationService, times(1)).reportHealthChange(any(), any(), anySet());
         verify(stackInstanceStatusChecker).queryInstanceStatuses(eq(stack), any());
         verify(clusterService, times(1)).updateClusterCertExpirationState(stack.getCluster(), true);
+    }
+
+    @Test
+    public void testInstanceSyncCMRunningNodeStopped() throws JobExecutionException {
+        setupForCM();
+        Set<HealthCheck> healthChecks = Sets.newHashSet(new HealthCheck(HealthCheckType.HOST, HealthCheckResult.UNHEALTHY, Optional.empty()),
+                new HealthCheck(HealthCheckType.CERT, HealthCheckResult.UNHEALTHY, Optional.empty()));
+        ExtendedHostStatuses extendedHostStatuses = new ExtendedHostStatuses(Map.of(HostName.hostName("host1"), healthChecks));
+        when(clusterStatusService.getExtendedHostStatuses(any())).thenReturn(extendedHostStatuses);
+        when(instanceMetaData.getInstanceStatus()).thenReturn(InstanceStatus.STOPPED);
+        when(instanceMetaData.getDiscoveryFQDN()).thenReturn("host1");
+        when(clusterApiConnectors.getConnector(stack)).thenReturn(clusterApi);
+        when(clusterApi.clusterStatusService()).thenReturn(clusterStatusService);
+        underTest.executeTracedJob(jobExecutionContext);
+
+        verify(clusterOperationService, times(1)).reportHealthChange(any(), any(), anySet());
+        verify(stackInstanceStatusChecker).queryInstanceStatuses(eq(stack), any());
+        verify(clusterService, times(1)).updateClusterCertExpirationState(stack.getCluster(), true);
+        verify(clusterService, times(1)).updateClusterStatusByStackId(stack.getId(), DetailedStackStatus.NODE_FAILURE);
+    }
+
+    @Test
+    public void testInstanceSyncCMRunningNodeStoppedAndStopStartEnabled() throws JobExecutionException {
+        setupForCM();
+        Set<HealthCheck> healthChecks = Sets.newHashSet(new HealthCheck(HealthCheckType.HOST, HealthCheckResult.UNHEALTHY, Optional.empty()),
+                new HealthCheck(HealthCheckType.CERT, HealthCheckResult.UNHEALTHY, Optional.empty()));
+        ExtendedHostStatuses extendedHostStatuses = new ExtendedHostStatuses(Map.of(HostName.hostName("host1"), healthChecks));
+        when(clusterStatusService.getExtendedHostStatuses(any())).thenReturn(extendedHostStatuses);
+        when(instanceMetaData.getInstanceStatus()).thenReturn(InstanceStatus.STOPPED);
+        when(instanceMetaData.getDiscoveryFQDN()).thenReturn("host1");
+        when(clusterApiConnectors.getConnector(stack)).thenReturn(clusterApi);
+        when(clusterApi.clusterStatusService()).thenReturn(clusterStatusService);
+        when(entitlementService.awsStopStartScalingEnabled(anyString())).thenReturn(true);
+        underTest.executeTracedJob(jobExecutionContext);
+
+        verify(clusterOperationService, times(1)).reportHealthChange(any(), any(), anySet());
+        verify(stackInstanceStatusChecker).queryInstanceStatuses(eq(stack), any());
+        verify(clusterService, times(1)).updateClusterCertExpirationState(stack.getCluster(), true);
+        verify(clusterService, times(0)).updateClusterStatusByStackId(stack.getId(), DetailedStackStatus.NODE_FAILURE);
     }
 
     @Test

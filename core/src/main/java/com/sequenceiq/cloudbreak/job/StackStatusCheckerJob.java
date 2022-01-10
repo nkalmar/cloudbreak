@@ -29,6 +29,7 @@ import com.gs.collections.impl.factory.Sets;
 import com.sequenceiq.cloudbreak.api.endpoint.v4.common.DetailedStackStatus;
 import com.sequenceiq.cloudbreak.api.endpoint.v4.common.Status;
 import com.sequenceiq.cloudbreak.auth.ThreadBasedUserCrnProvider;
+import com.sequenceiq.cloudbreak.auth.altus.EntitlementService;
 import com.sequenceiq.cloudbreak.auth.crn.Crn;
 import com.sequenceiq.cloudbreak.auth.crn.InternalCrnBuilder;
 import com.sequenceiq.cloudbreak.cloud.model.CloudInstance;
@@ -101,6 +102,9 @@ public class StackStatusCheckerJob extends StatusCheckerJob {
 
     @Inject
     private RuntimeVersionService runtimeVersionService;
+
+    @Inject
+    private EntitlementService entitlementService;
 
     public StackStatusCheckerJob(Tracer tracer) {
         super(tracer, "Stack Status Checker Job");
@@ -253,10 +257,26 @@ public class StackStatusCheckerJob extends StatusCheckerJob {
         clusterService.updateClusterCertExpirationState(stack.getCluster(), hostCertExpiring);
         clusterOperationService.reportHealthChange(stack.getResourceCrn(), newFailedNodeNamesWithReason, newHealthyHostNames);
         if (!failedInstances.isEmpty()) {
-            clusterService.updateClusterStatusByStackId(stack.getId(), DetailedStackStatus.NODE_FAILURE);
+            String accountId = Crn.safeFromString(stack.getResourceCrn()).getAccountId();
+            if (!stopStartEnabled(accountId, stack.getCloudPlatform())) {
+                clusterService.updateClusterStatusByStackId(stack.getId(), DetailedStackStatus.NODE_FAILURE);
+            }
         } else if (statesFromAvailableAllowed().contains(stack.getStatus())) {
             clusterService.updateClusterStatusByStackId(stack.getId(), DetailedStackStatus.AVAILABLE);
         }
+    }
+
+    private boolean stopStartEnabled(String accountId, String cloudPlatform) {
+        // TODO: CB-15341 Additional checks like node group part of compute group and node status is just STOPPED need to be made?
+        boolean entitled = false;
+        if ("AWS".equalsIgnoreCase(cloudPlatform)) {
+            entitled = entitlementService.awsStopStartScalingEnabled(accountId);
+        } else if ("AZURE".equalsIgnoreCase(cloudPlatform)) {
+            entitled = entitlementService.azureStopStartScalingEnabled(accountId);
+        } else if ("GCP".equalsIgnoreCase(cloudPlatform)) {
+            entitled = entitlementService.gcpStopStartScalingEnabled(accountId);
+        }
+        return entitled;
     }
 
     private void ifFlowNotRunning(Runnable function) {
