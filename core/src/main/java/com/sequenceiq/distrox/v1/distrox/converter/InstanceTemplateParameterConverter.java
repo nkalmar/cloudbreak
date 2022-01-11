@@ -102,6 +102,11 @@ public class InstanceTemplateParameterConverter {
     }
 
     private void initAzureEncryptionFromEnvironment(AzureInstanceTemplateV4Parameters response, DetailedEnvironmentResponse environment) {
+        String encryptionKeyUrl = Optional.of(environment)
+                .map(DetailedEnvironmentResponse::getAzure)
+                .map(AzureEnvironmentParameters::getResourceEncryptionParameters)
+                .map(AzureResourceEncryptionParameters::getEncryptionKeyUrl)
+                .orElse(null);
         String diskEncryptionSetId = Optional.of(environment)
                 .map(DetailedEnvironmentResponse::getAzure)
                 .map(AzureEnvironmentParameters::getResourceEncryptionParameters)
@@ -110,6 +115,7 @@ public class InstanceTemplateParameterConverter {
         if (diskEncryptionSetId != null) {
             LOGGER.info("Applying SSE with CMK for Azure managed disks as per environment.");
             AzureEncryptionV4Parameters encryption = new AzureEncryptionV4Parameters();
+            encryption.setEncryptionKeyUrl(encryptionKeyUrl);
             encryption.setType(EncryptionType.CUSTOM);
             encryption.setDiskEncryptionSetId(diskEncryptionSetId);
             response.setEncryption(encryption);
