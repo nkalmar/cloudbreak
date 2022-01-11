@@ -14,11 +14,15 @@ import org.junit.jupiter.api.Assertions;
 import org.testng.annotations.Test;
 
 import com.sequenceiq.cloudbreak.auth.crn.Crn;
+import com.sequenceiq.cloudbreak.polling.AbsolutTimeBasedTimeoutChecker;
 import com.sequenceiq.freeipa.api.v1.dns.model.AddDnsARecordRequest;
 import com.sequenceiq.freeipa.api.v1.dns.model.AddDnsCnameRecordRequest;
-import com.sequenceiq.cloudbreak.polling.AbsolutTimeBasedTimeoutChecker;
 import com.sequenceiq.freeipa.api.v1.dns.model.AddDnsZoneForSubnetsRequest;
+import com.sequenceiq.freeipa.api.v1.freeipa.cleanup.CleanupRequest;
+import com.sequenceiq.freeipa.api.v1.freeipa.stack.model.binduser.BindUserCreateRequest;
 import com.sequenceiq.freeipa.api.v1.freeipa.stack.model.common.Status;
+import com.sequenceiq.freeipa.api.v1.operation.model.OperationState;
+import com.sequenceiq.freeipa.api.v1.operation.model.OperationStatus;
 import com.sequenceiq.it.cloudbreak.FreeIpaClient;
 import com.sequenceiq.it.cloudbreak.client.FreeIpaTestClient;
 import com.sequenceiq.it.cloudbreak.context.Description;
@@ -36,6 +40,8 @@ public class FreeIpaUpgradeTests extends AbstractE2ETest {
     protected static final Status FREEIPA_DELETE_COMPLETED = Status.DELETE_COMPLETED;
 
     private static final long TWO_HOURS_IN_SEC = 2L * 60 * 60;
+
+    private static final long OPERATION_CHECKING_PERIOD = 5000L;
 
     @Inject
     private FreeIpaTestClient freeIpaTestClient;
@@ -114,6 +120,8 @@ public class FreeIpaUpgradeTests extends AbstractE2ETest {
                 addAndDeleteDnsARecord(ipaClient, environmentCrn);
                 addAndDeleteDnsCnameRecord(ipaClient, environmentCrn);
                 addListDeleteDnsZonesBySubnet(ipaClient, environmentCrn);
+                createBindUser(testContext, ipaClient, environmentCrn, accountId);
+                cleanUp(ipaClient, environmentCrn, accountId);
             }
         } catch (TestFailException e) {
             throw e;
@@ -172,5 +180,53 @@ public class FreeIpaUpgradeTests extends AbstractE2ETest {
             logger.error("DNS ZONE test failed during upgrade", e);
             throw new TestFailException("DNS ZONE test failed during upgrade with: " + e.getMessage(), e);
         }
+    }
+
+    private void createBindUser(TestContext testContext, com.sequenceiq.freeipa.api.client.FreeIpaClient ipaClient, String environmentCrn, String accountId) {
+        BindUserCreateRequest bindUserCreateRequest = new BindUserCreateRequest();
+        bindUserCreateRequest.setEnvironmentCrn(environmentCrn);
+        bindUserCreateRequest.setBindUserNameSuffix("testuser");
+//        String initiatorUserCrn = testContext.getActingUserCrn().toString();
+        String initiatorUserCrn = "__internal__actor__";
+        OperationStatus operationStatus = ipaClient.getFreeIpaV1Endpoint().createBindUser(bindUserCreateRequest, initiatorUserCrn);
+        operationStatus = waitToCompleted(ipaClient, operationStatus, accountId, "Freeipa createBindUser() test");
+        if (!isSuccess(operationStatus)) {
+            throw new TestFailException("Freeipa createBindUser() test has failed: " + operationStatus);
+        }
+    }
+
+    private void cleanUp(com.sequenceiq.freeipa.api.client.FreeIpaClient ipaClient, String environmentCrn, String accountId) {
+        CleanupRequest cleanupRequest = new CleanupRequest();
+        cleanupRequest.setEnvironmentCrn(environmentCrn);
+        OperationStatus operationStatus = ipaClient.getFreeIpaV1Endpoint().cleanup(cleanupRequest);
+        operationStatus = waitToCompleted(ipaClient, operationStatus, accountId, "Freeipa cleanUp() test");
+        if (!isSuccess(operationStatus)) {
+            throw new TestFailException("Freeipa cleanUp() test has failed: " + operationStatus);
+        }
+    }
+
+    private OperationStatus waitToCompleted(com.sequenceiq.freeipa.api.client.FreeIpaClient ipaClient, OperationStatus operationStatus, String accountId,
+            String testFailPrefix) {
+        while (isRunning(operationStatus)) {
+            try {
+                Thread.sleep(OPERATION_CHECKING_PERIOD);
+            } catch (InterruptedException e) {
+                String errorMessage = testFailPrefix + " has been interrupted";
+                logger.error(errorMessage);
+                throw new TestFailException(errorMessage);
+            }
+            operationStatus = ipaClient.getOperationV1Endpoint().getOperationStatus(operationStatus.getOperationId(), accountId);
+        }
+        return operationStatus;
+    }
+
+    private boolean isRunning(OperationStatus operationStatus) {
+        OperationState operationState = operationStatus.getStatus();
+        return OperationState.RUNNING == operationState || OperationState.REQUESTED == operationState;
+    }
+
+    private boolean isSuccess(OperationStatus operationStatus) {
+        OperationState operationState = operationStatus.getStatus();
+        return COMPLETED == operationState;
     }
 }
