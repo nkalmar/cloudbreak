@@ -39,6 +39,8 @@ public class CloudwatchRecordWorker extends RecordWorker<AbstractCloudwatchRecor
 
     private final String logStream;
 
+    private final String region;
+
     private final int maxRetry;
 
     public CloudwatchRecordWorker(String name, String serviceName, AbstractCloudwatchRecordProcessor recordProcessor,
@@ -47,6 +49,7 @@ public class CloudwatchRecordWorker extends RecordWorker<AbstractCloudwatchRecor
         this.tracer = tracer;
         this.logGroup = configuration.getLogGroup();
         this.logStream = initLogStream(configuration.getLogStream());
+        this.region = configuration.getRegion();
         this.maxRetry = configuration.getMaxRetry();
     }
 
@@ -80,6 +83,7 @@ public class CloudwatchRecordWorker extends RecordWorker<AbstractCloudwatchRecor
             clientConfig.setMaxErrorRetry(maxRetry);
             awsLogsClient = AWSLogsClient.builder()
                     .withClientConfiguration(clientConfig)
+                    .withRegion(region)
                     .build();
         }
         return awsLogsClient;
@@ -90,20 +94,26 @@ public class CloudwatchRecordWorker extends RecordWorker<AbstractCloudwatchRecor
         describeLogStreams.setLogGroupName(logGroup);
         describeLogStreams.setLogStreamNamePrefix(logStream);
         try {
-            return getAwsLogsClient().describeLogStreams(describeLogStreams);
+            DescribeLogStreamsResult describeLogStreamsResult = getAwsLogsClient().describeLogStreams(describeLogStreams);
+            if (!describeLogStreamsResult.getLogStreams().isEmpty()) {
+                return  describeLogStreamsResult;
+            } else {
+                CreateLogStreamRequest createLogStreamRequest = new CreateLogStreamRequest();
+                createLogStreamRequest.setLogGroupName(logGroup);
+                createLogStreamRequest.setLogStreamName(logStream);
+                getAwsLogsClient().createLogStream(createLogStreamRequest);
+                return getAwsLogsClient().describeLogStreams(describeLogStreams);
+            }
         } catch (ResourceNotFoundException re) {
-            CreateLogStreamRequest createLogStreamRequest = new CreateLogStreamRequest();
-            createLogStreamRequest.setLogGroupName(logGroup);
-            createLogStreamRequest.setLogStreamName(logStream);
-            getAwsLogsClient().createLogStream(createLogStreamRequest);
-            return getAwsLogsClient().describeLogStreams(describeLogStreams);
+            LOGGER.error("Error during describing AWS CloudWatch log streams: log group '{}' not found", logGroup, re);
+            throw re;
         }
     }
 
     private Collection<InputLogEvent> createLogEvents(CloudwatchRecordRequest input) {
         Collection<InputLogEvent> inputLogEvents = new ArrayList<>();
         String eventJson = null;
-        if (input.getMessageBody().isPresent()) {
+        if (input.getMessageBody().isPresent() && !input.isForceRawOutput()) {
             try {
                 eventJson = JsonFormat.printer()
                         .omittingInsignificantWhitespace().print(input.getMessageBody().get());
