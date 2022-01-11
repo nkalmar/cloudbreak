@@ -36,6 +36,7 @@ import com.sequenceiq.environment.credential.domain.Credential;
 import com.sequenceiq.environment.credential.service.CredentialService;
 import com.sequenceiq.environment.environment.domain.Environment;
 import com.sequenceiq.environment.environment.domain.EnvironmentAuthentication;
+import com.sequenceiq.environment.environment.domain.EnvironmentViewConverter;
 import com.sequenceiq.environment.environment.dto.AuthenticationDto;
 import com.sequenceiq.environment.environment.dto.AuthenticationDtoConverter;
 import com.sequenceiq.environment.environment.dto.EnvironmentChangeCredentialDto;
@@ -43,6 +44,7 @@ import com.sequenceiq.environment.environment.dto.EnvironmentDto;
 import com.sequenceiq.environment.environment.dto.EnvironmentDtoConverter;
 import com.sequenceiq.environment.environment.dto.EnvironmentEditDto;
 import com.sequenceiq.environment.environment.dto.SecurityAccessDto;
+import com.sequenceiq.environment.environment.dto.UpdateAwsDiskEncryptionParametersDto;
 import com.sequenceiq.environment.environment.dto.UpdateAzureResourceEncryptionDto;
 import com.sequenceiq.environment.environment.dto.telemetry.EnvironmentFeatures;
 import com.sequenceiq.environment.environment.dto.telemetry.EnvironmentTelemetry;
@@ -53,12 +55,14 @@ import com.sequenceiq.environment.environment.validation.EnvironmentValidatorSer
 import com.sequenceiq.environment.network.NetworkService;
 import com.sequenceiq.environment.network.dao.domain.AwsNetwork;
 import com.sequenceiq.environment.network.dto.NetworkDto;
+import com.sequenceiq.environment.parameter.dto.AwsDiskEncryptionParametersDto;
 import com.sequenceiq.environment.parameter.dto.AwsParametersDto;
 import com.sequenceiq.environment.parameter.dto.AzureResourceEncryptionParametersDto;
 import com.sequenceiq.environment.parameter.dto.ParametersDto;
 import com.sequenceiq.environment.parameters.dao.domain.AwsParameters;
 import com.sequenceiq.environment.parameters.dao.domain.AzureParameters;
 import com.sequenceiq.environment.parameters.dao.domain.BaseParameters;
+import com.sequenceiq.environment.parameters.dao.repository.AwsParametersRepository;
 import com.sequenceiq.environment.parameters.dao.repository.AzureParametersRepository;
 import com.sequenceiq.environment.parameters.service.ParametersService;
 
@@ -97,6 +101,12 @@ class EnvironmentModificationServiceTest {
 
     @MockBean
     private EnvironmentEncryptionService environmentEncryptionService;
+
+    @MockBean
+    private EnvironmentViewConverter environmentViewConverter;
+
+    @MockBean
+    private AwsParametersRepository awsParametersRepository;
 
     @MockBean
     private AzureParametersRepository azureParametersRepository;
@@ -690,6 +700,68 @@ class EnvironmentModificationServiceTest {
         assertEquals("dummyKeyUrl", azureParametersArgumentCaptor.getValue().getEncryptionKeyUrl());
         assertEquals("dummyResourceGroupName", azureParametersArgumentCaptor.getValue().getEncryptionKeyResourceGroupName());
 
+    }
+
+    @Test
+    void testUpdateAwsDiskEncryptionParametersByEnvironmentName() {
+        UpdateAwsDiskEncryptionParametersDto updateAwsDiskEncryptionParametersDto = UpdateAwsDiskEncryptionParametersDto.builder()
+                .withAwsDiskEncryptionParametersDto(AwsDiskEncryptionParametersDto.builder()
+                        .withEncryptionKeyArn("dummyKeyArn")
+                        .build())
+                .build();
+        EnvironmentDto environmentDto = EnvironmentDto.builder()
+                .withParameters(ParametersDto.builder()
+                        .withAwsParameters(AwsParametersDto.builder()
+                                .withAwsDiskEncryptionParameters(AwsDiskEncryptionParametersDto.builder()
+                                        .withEncryptionKeyArn("dummyKeyArn")
+                                        .build())
+                                .build())
+                        .build())
+                .build();
+        Environment env = new Environment();
+        env.setParameters(new AwsParameters());
+        when(environmentService.getValidatorService()).thenReturn(validatorService);
+        when(environmentService
+                .findByNameAndAccountIdAndArchivedIsFalse(eq(ENVIRONMENT_NAME), eq(ACCOUNT_ID))).thenReturn(Optional.of(env));
+        when(validatorService.validateEncryptionKeyArn(any(String.class), any(String.class))).thenReturn(ValidationResult.builder().build());
+        when(environmentDtoConverter.environmentToDto(env)).thenReturn(environmentDto);
+        EnvironmentDto envDto = environmentModificationServiceUnderTest.updateAwsDiskEncryptionParametersByEnvironmentName(ACCOUNT_ID,
+                ENVIRONMENT_NAME, updateAwsDiskEncryptionParametersDto);
+        assertEquals(envDto.getParameters().getAwsParametersDto().getAwsDiskEncryptionParametersDto().getEncryptionKeyArn(), "dummyKeyArn");
+        ArgumentCaptor<AwsParameters> awsParametersArgumentCaptor = ArgumentCaptor.forClass(AwsParameters.class);
+        verify(awsParametersRepository).save(awsParametersArgumentCaptor.capture());
+        assertEquals("dummyKeyArn", awsParametersArgumentCaptor.getValue().getEncryptionKeyArn());
+    }
+
+    @Test
+    void testUpdateAwsDiskEncryptionParametersByEnvironmentCrn() {
+        UpdateAwsDiskEncryptionParametersDto updateAwsDiskEncryptionParametersDto = UpdateAwsDiskEncryptionParametersDto.builder()
+                .withAwsDiskEncryptionParametersDto(AwsDiskEncryptionParametersDto.builder()
+                        .withEncryptionKeyArn("dummyKeyArn")
+                        .build())
+                .build();
+        EnvironmentDto environmentDto = EnvironmentDto.builder()
+                .withParameters(ParametersDto.builder()
+                    .withAwsParameters(AwsParametersDto.builder()
+                            .withAwsDiskEncryptionParameters(AwsDiskEncryptionParametersDto.builder()
+                                    .withEncryptionKeyArn("dummyKeyArn")
+                                    .build())
+                            .build())
+                        .build())
+                .build();
+        Environment env = new Environment();
+        env.setParameters(new AwsParameters());
+        when(environmentService.getValidatorService()).thenReturn(validatorService);
+        when(environmentService
+                .findByResourceCrnAndAccountIdAndArchivedIsFalse(eq(CRN), eq(ACCOUNT_ID))).thenReturn(Optional.of(env));
+        when(validatorService.validateEncryptionKeyArn(any(String.class), any(String.class))).thenReturn(ValidationResult.builder().build());
+        when(environmentDtoConverter.environmentToDto(env)).thenReturn(environmentDto);
+        EnvironmentDto envDto = environmentModificationServiceUnderTest.updateAwsDiskEncryptionParametersByEnvironmentCrn(ACCOUNT_ID,
+                CRN, updateAwsDiskEncryptionParametersDto);
+        assertEquals(envDto.getParameters().getAwsParametersDto().getAwsDiskEncryptionParametersDto().getEncryptionKeyArn(), "dummyKeyArn");
+        ArgumentCaptor<AwsParameters> awsParametersArgumentCaptor = ArgumentCaptor.forClass(AwsParameters.class);
+        verify(awsParametersRepository).save(awsParametersArgumentCaptor.capture());
+        assertEquals("dummyKeyArn", awsParametersArgumentCaptor.getValue().getEncryptionKeyArn());
     }
 
     @Configuration
